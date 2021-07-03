@@ -119,7 +119,7 @@ func NewMetadata(reader io.Reader) (Metadata, error) {
 	metadata.TimeHour = metadata.ReadInt(r)
 	metadata.TimeDay = metadata.ReadInt(r)
 	metadata.TimeMonth = metadata.ReadInt(r)
-	metadata.TimeYear = metadata.ReadInt(r)
+	metadata.TimeYear = 1900 + metadata.ReadInt(r)
 	metadata.TimeIsDST = metadata.ReadInt(r)
 	metadata.DatabaseName = metadata.ReadString(r)
 	metadata.RemoteVersion = metadata.ReadString(r)
