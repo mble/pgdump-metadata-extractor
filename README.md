@@ -31,6 +31,13 @@ Usage of bin/pgdump-metadata-extractor:
 Then you run it with:
 
 ```shell
-$ ./bin/pgdump-metadata-extractor --filename dump.sql
-{"magic":"PGDMP","vmain":1,"vmin":13,"vrev":0,"intsize":4,"offsize":8,"format":"CUSTOM","compression":-1,"timeSec":21,"timeMin":21,"timeHour":17,"timeDay":3,"timeMonth":6,"timeYear":121,"timeIsDst":1,"database":"bigdb","remoteVersion":"10.11","pgDumpVersion":"10.11","toccount":15}
+$ ./bin/pgdump-metadata-extractor --filename latest.dump
+{"magic":"PGDMP","vmain":1,"vmin":13,"vrev":0,"intsize":4,"offsize":8,"format":"CUSTOM","compression":-1,"timeSec":21,"timeMin":21,"timeHour":17,"timeDay":3,"timeMonth":6,"timeYear":2021,"timeIsDst":1,"database":"bigdb","remoteVersion":"10.11","pgDumpVersion":"10.11","toccount":15}
+```
+
+or
+
+```shell
+$ ./bin/pgdump-metadata-extractor --stdin < latest.dump
+{"magic":"PGDMP","vmain":1,"vmin":13,"vrev":0,"intsize":4,"offsize":8,"format":"CUSTOM","compression":-1,"timeSec":21,"timeMin":21,"timeHour":17,"timeDay":3,"timeMonth":6,"timeYear":2021,"timeIsDst":1,"database":"bigdb","remoteVersion":"10.11","pgDumpVersion":"10.11","toccount":15}
 ```

@@ -1,0 +1,13 @@
+name: lint
+on: [push, pull-request]
+jobs:
+  lint:
+    env:
+      GOPROXY: https://proxy.golang.org
+      GO111MODULE: on
+    runs-on: ubuntu-latest
+    steps:
+      - name: lint
+        uses: golangci/golangci-lint-action@5c56cd6c9dc07901af25baab6f2b0d9f3b7c3018
+        with:
+          version: v1.41.1

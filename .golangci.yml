@@ -1,0 +1,19 @@
+run:
+  deadline: 1m
+
+linters:
+  disable-all: true
+  enable:
+    - deadcode
+    - errcheck
+    - gosec
+    - goconst
+    - goimports
+    - revive
+    - govet
+    - ineffassign
+    - gosimple
+    - structcheck
+    - unconvert
+    - varcheck
+  fast: false

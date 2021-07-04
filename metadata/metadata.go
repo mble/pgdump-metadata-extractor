@@ -2,13 +2,14 @@ package metadata
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 )
 
-var errNotADump = errors.New("magic bytes not detected, not a dump?")
+var ErrNotADump = errors.New("magic bytes not detected, not a dump?")
 
 // Metadata represents the metadata about the dump.
 type Metadata struct {
@@ -92,17 +93,35 @@ func (m *Metadata) ReadString(reader io.Reader) string {
 	return val
 }
 
+// ToJSON returns a JSON representation of the metadata.
+func (m *Metadata) ToJSON() ([]byte, error) {
+	json, err := json.Marshal(m)
+	if err != nil {
+		err = fmt.Errorf("err dumping JSON: %w", err)
+
+		return []byte{}, err
+	}
+
+	return json, nil
+}
+
 func NewMetadata(reader io.Reader) (Metadata, error) {
 	formats := []string{"UNKNOWN", "CUSTOM", "FILE", "TAR", "NULL", "DIRECTORY"}
+	yearStart := 1900
 	metadata := Metadata{}
 
 	r := bufio.NewReader(reader)
 	magicBytes := 5
 
-	metadata.Magic = ReadExactString(r, magicBytes)
+	magicString, err := ReadExactString(r, magicBytes)
+	if err != nil {
+		return metadata, fmt.Errorf("err reading magic bytes: %w", err)
+	}
+
+	metadata.Magic = magicString
 
 	if metadata.Magic != "PGDMP" {
-		err := fmt.Errorf("%w, expected=PGDMP, got=%s not a dump?", errNotADump, metadata.Magic)
+		err := fmt.Errorf("%w, expected=PGDMP, got=%s not a dump?", ErrNotADump, metadata.Magic)
 
 		return metadata, err
 	}
@@ -119,7 +138,7 @@ func NewMetadata(reader io.Reader) (Metadata, error) {
 	metadata.TimeHour = metadata.ReadInt(r)
 	metadata.TimeDay = metadata.ReadInt(r)
 	metadata.TimeMonth = metadata.ReadInt(r)
-	metadata.TimeYear = 1900 + metadata.ReadInt(r)
+	metadata.TimeYear = yearStart + metadata.ReadInt(r)
 	metadata.TimeIsDST = metadata.ReadInt(r)
 	metadata.DatabaseName = metadata.ReadString(r)
 	metadata.RemoteVersion = metadata.ReadString(r)
@@ -130,15 +149,15 @@ func NewMetadata(reader io.Reader) (Metadata, error) {
 }
 
 // ReadExactString reads a string from the reader, numBytes from current position.
-func ReadExactString(reader io.Reader, numBytes int) string {
+func ReadExactString(reader io.Reader, numBytes int) (string, error) {
 	buf := make([]byte, numBytes)
 
 	n, err := reader.Read(buf)
 	if err != nil {
-		log.Fatalf("err reading exact string: %v", err)
+		return "", fmt.Errorf("err reading exact string: %w", err)
 	}
 
-	return string(buf[0:n])
+	return string(buf[0:n]), nil
 }
 
 // ReadExactInt reads an int from the reader, numBytes from current position.

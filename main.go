@@ -1,107 +1,64 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"runtime"
-	"runtime/pprof"
 
-	"github.com/mble/pgdump-metadata-extractor/metadata"
+	"github.com/mble/pgdump-metadata-extractor/extractor"
 )
 
-type Cfg struct {
-	fileName         string
-	stdin            bool
-	enableCPUProfile bool
-	enableMemProfile bool
-}
-
-func run(cfg Cfg) error {
+func main() {
 	var (
-		buf *os.File
-		err error
+		fd       *os.File
+		err      error
+		exitCode int
 	)
 
+	defer func() {
+		os.Exit(exitCode)
+	}()
+
+	cfg := extractor.Cfg{}
+	flag.StringVar(&cfg.FileName, "filename", "", "dump to read metadata of")
+	flag.BoolVar(&cfg.Stdin, "stdin", false, "configure to read from stdin")
+	flag.Parse()
+
+	if err := cfg.Validate(); err != nil {
+		log.Print(err)
+
+		exitCode = 1
+	}
+
 	switch {
-	case cfg.stdin:
-		buf = os.Stdin
-	case cfg.fileName != "":
-		buf, err = os.Open(cfg.fileName)
+	case cfg.Stdin:
+		fd = os.Stdin
+	case cfg.FileName != "":
+		fd, err = os.Open(cfg.FileName)
 		if err != nil {
 			err = fmt.Errorf("err opening file: %w", err)
-			return err
+
+			log.Print(err)
+
+			exitCode = 1
+
+			return
 		}
 	}
 
 	defer func() {
-		if err = buf.Close(); err != nil {
-			log.Fatalf("err closing file: %v", err)
-		}
+		fd.Close()
 	}()
 
-	data, err := metadata.NewMetadata(buf)
+	json, err := extractor.Run(fd)
 	if err != nil {
-		err = fmt.Errorf("err reading metadata: %w", err)
+		log.Print(err)
 
-		return err
+		exitCode = 1
+
+		return
 	}
 
-	json, err := json.Marshal(data)
-	if err != nil {
-		err = fmt.Errorf("err dumping JSON: %w", err)
-
-		return err
-	}
-
-	fmt.Printf("%s", json)
-
-	return nil
-}
-
-func main() {
-	cfg := Cfg{}
-	flag.StringVar(&cfg.fileName, "filename", "", "dump to read metadata of")
-	flag.BoolVar(&cfg.stdin, "stdin", false, "configure to read from stdin")
-	flag.BoolVar(&cfg.enableCPUProfile, "profile-cpu", false, "enable cpu profile")
-	flag.BoolVar(&cfg.enableMemProfile, "profile-mem", false, "enable memory profile")
-	flag.Parse()
-
-	if cfg.fileName == "" && !cfg.stdin {
-		log.Fatal("file not specified and stdin mode not enabled")
-	}
-
-	if cfg.fileName != "" && cfg.stdin {
-		log.Fatal("can't provide file and read from stdin")
-	}
-
-	if cfg.enableCPUProfile {
-		f, err := os.Create("cpu.prof")
-		if err != nil {
-			log.Fatal("could not create CPU profile: ", err)
-		}
-		defer f.Close()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			log.Fatal("could not start CPU profile: ", err)
-		}
-		defer pprof.StopCPUProfile()
-	}
-
-	if err := run(cfg); err != nil {
-		log.Fatal(err)
-	}
-
-	if cfg.enableMemProfile {
-		f, err := os.Create("mem.prof")
-		if err != nil {
-			log.Fatal("could not create memory profile: ", err)
-		}
-		defer f.Close()
-		runtime.GC() // get up-to-date statistics
-		if err := pprof.WriteHeapProfile(f); err != nil {
-			log.Fatal("could not write memory profile: ", err)
-		}
-	}
+	fmt.Print(json)
 }
