@@ -105,6 +105,8 @@ func (m *Metadata) ToJSON() ([]byte, error) {
 	return json, nil
 }
 
+// NewMetadata reads from reader, parsing out the pg_dump archive header format
+// into a Metadata struct.
 func NewMetadata(reader io.Reader) (Metadata, error) {
 	formats := []string{"UNKNOWN", "CUSTOM", "FILE", "TAR", "NULL", "DIRECTORY"}
 	yearStart := 1900
