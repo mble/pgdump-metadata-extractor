@@ -29,6 +29,8 @@ func main() {
 		log.Print(err)
 
 		exitCode = 1
+
+		return
 	}
 
 	switch {
