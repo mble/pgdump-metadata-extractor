@@ -7,6 +7,7 @@ jobs:
       GO111MODULE: on
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@5a4ac9002d0be2fb38bd78e4b4dbde5606d7042f
       - name: lint
         uses: golangci/golangci-lint-action@5c56cd6c9dc07901af25baab6f2b0d9f3b7c3018
         with:
