@@ -62,5 +62,5 @@ func main() {
 		return
 	}
 
-	fmt.Print(json)
+	fmt.Printf("%s", json)
 }
