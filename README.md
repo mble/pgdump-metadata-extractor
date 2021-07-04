@@ -1,5 +1,8 @@
 # pgdump-metadata-extractor
 
+![lint](https://github.com/mble/pgdump-metadata-extractor/actions/workflows/lint.yml/badge.svg)
+![test](https://github.com/mble/pgdump-metadata-extractor/actions/workflows/test.yml/badge.svg)
+
 ## What is this?
 
 This is a small tool to extract some metadata from `pg_dump` generated dumps of PostgreSQL databases, and present it as JSON.
@@ -20,10 +23,6 @@ $ ./bin/pgdump-metadata-extractor --help
 Usage of bin/pgdump-metadata-extractor:
   -filename string
     	dump to read metadata of
-  -profile-cpu
-    	enable cpu profile
-  -profile-mem
-    	enable memory profile
   -stdin
     	configure to read from stdin
 ```
