@@ -1,19 +1,59 @@
-run:
-  deadline: 1m
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+  goconst:
+    min-len: 2
+    min-occurrences: 3
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+  govet:
+    check-shadowing: true
+    enable:
+      - fieldalignment
+  nolintlint:
+    require-explanation: true
+    require-specific: true
 
 linters:
   disable-all: true
   enable:
-    - deadcode
+    - bodyclose
+    - dogsled
+    - dupl
     - errcheck
-    - gosec
+    - exportloopref
+    - exhaustive
     - goconst
+    - gocritic
+    - gofmt
     - goimports
-    - revive
+    - gomnd
+    - gocyclo
+    - gosec
+    - gosimple
     - govet
     - ineffassign
-    - gosimple
-    - structcheck
+    - misspell
+    - nolintlint
+    - nakedret
+    - prealloc
+    - predeclared
+    - revive
+    - staticcheck
+    - stylecheck
+    - thelper
+    - tparallel
+    - typecheck
     - unconvert
-    - varcheck
-  fast: false
+    - unparam
+    - unused
+    - whitespace
+    - wsl
+
+run:
+  issues-exit-code: 1

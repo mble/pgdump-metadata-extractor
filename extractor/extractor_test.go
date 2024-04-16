@@ -14,9 +14,9 @@ func TestCfgValidate(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
+		err    error
 		desc   string
 		config extractor.Cfg
-		err    error
 	}{
 		{
 			desc: "no filename or stdin set",
@@ -91,9 +91,9 @@ func TestRunFileErr(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
+		err      error
 		desc     string
 		filename string
-		err      error
 	}{
 		{
 			desc:     "empty file",

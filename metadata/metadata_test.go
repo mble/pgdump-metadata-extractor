@@ -70,13 +70,13 @@ func TestNewMetadata(t *testing.T) {
 	}
 	defer file.Close()
 
-	metadata, err := metadata.NewMetadata(file)
+	meta, err := metadata.NewMetadata(file)
 	if err != nil {
 		t.Error(err)
 	}
 
-	if !reflect.DeepEqual(exp, metadata) {
-		t.Errorf("expected=%+v, got=%+v", exp, metadata)
+	if !reflect.DeepEqual(exp, meta) {
+		t.Errorf("expected=%+v, got=%+v", exp, meta)
 	}
 }
 
@@ -137,7 +137,7 @@ func TestToJSON(t *testing.T) {
 		TOCCount:      15,
 	}
 
-	exp := `{"magic":"PGDMP","vmain":1,"vmin":13,"vrev":0,"intsize":4,"offsize":8,"format":"CUSTOM","compression":-1,"timeSec":33,"timeMin":53,"timeHour":18,"timeDay":3,"timeMonth":6,"timeYear":2021,"timeIsDst":1,"database":"empty_db","remoteVersion":"10.11","pgDumpVersion":"10.11","toccount":15}`
+	exp := `{"magic":"PGDMP","format":"CUSTOM","pgDumpVersion":"10.11","remoteVersion":"10.11","database":"empty_db","timeYear":2021,"timeMonth":6,"timeDay":3,"timeHour":18,"timeMin":53,"timeSec":33,"timeIsDst":1,"compression":-1,"toccount":15,"intsize":4,"vrev":0,"vmin":13,"vmain":1,"offsize":8}`
 
 	json, err := meta.ToJSON()
 	if err != nil {

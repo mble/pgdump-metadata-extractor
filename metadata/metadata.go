@@ -15,42 +15,42 @@ var ErrNotADump = errors.New("magic bytes not detected, not a dump?")
 type Metadata struct {
 	// Magic is the magic byte string.
 	Magic string `json:"magic"`
-	// VMain is the major version of the archive format.
-	VMain uint8 `json:"vmain"`
-	// VMin is the minor version of the archive format.
-	VMin uint8 `json:"vmin"`
-	// VRev is the revision number of the archive format.
-	VRev uint8 `json:"vrev"`
-	// IntSize is the int size, in bytes.
-	IntSize uint8 `json:"intsize"`
-	// OffSize is the offset size, in bytes.
-	OffSize uint8 `json:"offsize"`
 	// Format is the format of the dump.
 	Format string `json:"format"`
-	// Compression represents if compression is enabled on the dump.
-	Compression int `json:"compression"`
-	// TimeSec forms the seconds part of the creation timestamp.
-	TimeSec int `json:"timeSec"`
-	// TimeMin forms the minutes part of the creation timestamp.
-	TimeMin int `json:"timeMin"`
-	// TimeHour forms the hours part of the creation timestamp.
-	TimeHour int `json:"timeHour"`
-	// TimeDay forms the day part of the creation timestamp.
-	TimeDay int `json:"timeDay"`
-	// TimeMonth forms the month part of the creation timestamp.
-	TimeMonth int `json:"timeMonth"`
-	// TimeYear forms the year part of the creation timestamp.
-	TimeYear int `json:"timeYear"`
-	// TimeIsDST is a flag to determine if the DST applies to the timestamp.
-	TimeIsDST int `json:"timeIsDst"`
-	// DatabaseName is the name of the database dumped.
-	DatabaseName string `json:"database"`
-	// RemoteVersion is the version of the PostgreSQL cluster dumped.
-	RemoteVersion string `json:"remoteVersion"`
 	// PGDumpVersion is the version of pg_dump used to create the dump.
 	PGDumpVersion string `json:"pgDumpVersion"`
+	// RemoteVersion is the version of the PostgreSQL cluster dumped.
+	RemoteVersion string `json:"remoteVersion"`
+	// DatabaseName is the name of the database dumped.
+	DatabaseName string `json:"database"`
+	// TimeYear forms the year part of the creation timestamp.
+	TimeYear int `json:"timeYear"`
+	// TimeMonth forms the month part of the creation timestamp.
+	TimeMonth int `json:"timeMonth"`
+	// TimeDay forms the day part of the creation timestamp.
+	TimeDay int `json:"timeDay"`
+	// TimeHour forms the hours part of the creation timestamp.
+	TimeHour int `json:"timeHour"`
+	// TimeMin forms the minutes part of the creation timestamp.
+	TimeMin int `json:"timeMin"`
+	// TimeSec forms the seconds part of the creation timestamp.
+	TimeSec int `json:"timeSec"`
+	// TimeIsDST is a flag to determine if the DST applies to the timestamp.
+	TimeIsDST int `json:"timeIsDst"`
+	// Compression represents if compression is enabled on the dump.
+	Compression int `json:"compression"`
 	// TOCCount is the count of TOC centires in the dump.
 	TOCCount int `json:"toccount"`
+	// IntSize is the int size, in bytes.
+	IntSize uint8 `json:"intsize"`
+	// VRev is the revision number of the archive format.
+	VRev uint8 `json:"vrev"`
+	// VMin is the minor version of the archive format.
+	VMin uint8 `json:"vmin"`
+	// VMain is the major version of the archive format.
+	VMain uint8 `json:"vmain"`
+	// OffSize is the offset size, in bytes.
+	OffSize uint8 `json:"offsize"`
 }
 
 // ReadInt reads bytes from reader and operates in reverse byte order, returning an int.
@@ -95,14 +95,14 @@ func (m *Metadata) ReadString(reader io.Reader) string {
 
 // ToJSON returns a JSON representation of the metadata.
 func (m *Metadata) ToJSON() ([]byte, error) {
-	json, err := json.Marshal(m)
+	out, err := json.Marshal(m)
 	if err != nil {
 		err = fmt.Errorf("err dumping JSON: %w", err)
 
 		return []byte{}, err
 	}
 
-	return json, nil
+	return out, nil
 }
 
 // NewMetadata reads from reader, parsing out the pg_dump archive header format
