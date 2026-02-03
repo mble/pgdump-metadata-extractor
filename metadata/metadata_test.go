@@ -354,6 +354,131 @@ func TestNewMetadataReadErr(t *testing.T) {
 	}
 }
 
+func TestNewMetadataFormat115(t *testing.T) {
+	t.Parallel()
+
+	// Format 1.15 uses compression as a string
+	intSize := 4
+	db := "test_db"
+	remote := "14.0"
+	pgDump := "14.0"
+	compressionSpec := "none"
+
+	var buf bytes.Buffer
+	buf.WriteString("PGDMP")
+	buf.WriteByte(1)             // vmain
+	buf.WriteByte(15)            // vmin (1.15)
+	buf.WriteByte(0)             // vrev
+	buf.WriteByte(byte(intSize)) // int size
+	buf.WriteByte(8)             // off size
+	buf.WriteByte(1)             // format CUSTOM
+	buf.Write(encodeString(&compressionSpec, intSize))
+	buf.Write(encodeInt(33, intSize))
+	buf.Write(encodeInt(53, intSize))
+	buf.Write(encodeInt(18, intSize))
+	buf.Write(encodeInt(3, intSize))
+	buf.Write(encodeInt(6, intSize))
+	buf.Write(encodeInt(2021-1900, intSize))
+	buf.Write(encodeInt(1, intSize))
+	buf.Write(encodeString(&db, intSize))
+	buf.Write(encodeString(&remote, intSize))
+	buf.Write(encodeString(&pgDump, intSize))
+	buf.Write(encodeInt(15, intSize))
+
+	meta, err := metadata.NewMetadata(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp := metadata.Metadata{
+		Magic:           "PGDMP",
+		VMain:           1,
+		VMin:            15,
+		VRev:            0,
+		IntSize:         uint8(intSize),
+		OffSize:         8,
+		Format:          "CUSTOM",
+		CompressionSpec: strPtr("none"),
+		TimeSec:         33,
+		TimeMin:         53,
+		TimeHour:        18,
+		TimeDay:         3,
+		TimeMonth:       6,
+		TimeYear:        2021,
+		TimeIsDST:       1,
+		DatabaseName:    strPtr("test_db"),
+		RemoteVersion:   strPtr("14.0"),
+		PGDumpVersion:   strPtr("14.0"),
+		TOCCount:        15,
+	}
+
+	if !reflect.DeepEqual(exp, meta) {
+		t.Errorf("expected=%+v, got=%+v", exp, meta)
+	}
+}
+
+func TestNewMetadataFormat116(t *testing.T) {
+	t.Parallel()
+
+	// Format 1.16 uses compression as a single byte
+	intSize := 4
+	db := "test_db"
+	remote := "16.0"
+	pgDump := "17.0"
+
+	var buf bytes.Buffer
+	buf.WriteString("PGDMP")
+	buf.WriteByte(1)             // vmain
+	buf.WriteByte(16)            // vmin (1.16)
+	buf.WriteByte(0)             // vrev
+	buf.WriteByte(byte(intSize)) // int size
+	buf.WriteByte(8)             // off size
+	buf.WriteByte(1)             // format CUSTOM
+	buf.WriteByte(1)             // compression algorithm (single byte)
+	buf.Write(encodeInt(55, intSize))
+	buf.Write(encodeInt(20, intSize))
+	buf.Write(encodeInt(23, intSize))
+	buf.Write(encodeInt(14, intSize))
+	buf.Write(encodeInt(8, intSize))
+	buf.Write(encodeInt(2025-1900, intSize))
+	buf.Write(encodeInt(1, intSize))
+	buf.Write(encodeString(&db, intSize))
+	buf.Write(encodeString(&remote, intSize))
+	buf.Write(encodeString(&pgDump, intSize))
+	buf.Write(encodeInt(10, intSize))
+
+	meta, err := metadata.NewMetadata(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp := metadata.Metadata{
+		Magic:         "PGDMP",
+		VMain:         1,
+		VMin:          16,
+		VRev:          0,
+		IntSize:       uint8(intSize),
+		OffSize:       8,
+		Format:        "CUSTOM",
+		Compression:   1,
+		TimeSec:       55,
+		TimeMin:       20,
+		TimeHour:      23,
+		TimeDay:       14,
+		TimeMonth:     8,
+		TimeYear:      2025,
+		TimeIsDST:     1,
+		DatabaseName:  strPtr("test_db"),
+		RemoteVersion: strPtr("16.0"),
+		PGDumpVersion: strPtr("17.0"),
+		TOCCount:      10,
+	}
+
+	if !reflect.DeepEqual(exp, meta) {
+		t.Errorf("expected=%+v, got=%+v", exp, meta)
+	}
+}
+
 func TestToJSON(t *testing.T) {
 	t.Parallel()
 

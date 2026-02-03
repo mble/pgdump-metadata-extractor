@@ -49,8 +49,10 @@ type Metadata struct {
 	TimeSec int `json:"timeSec"`
 	// TimeIsDST is a flag to determine if the DST applies to the timestamp.
 	TimeIsDST int `json:"timeIsDst"`
-	// Compression represents if compression is enabled on the dump.
-	Compression int `json:"compression"`
+	// Compression represents if compression is enabled on the dump (format < 1.15).
+	Compression int `json:"compression,omitempty"`
+	// CompressionSpec is the compression specification string (format >= 1.15).
+	CompressionSpec *string `json:"compressionSpec,omitempty"`
 	// TOCCount is the count of TOC centires in the dump.
 	TOCCount int `json:"toccount"`
 	// IntSize is the int size, in bytes.
@@ -63,6 +65,12 @@ type Metadata struct {
 	VMain uint8 `json:"vmain"`
 	// OffSize is the offset size, in bytes.
 	OffSize uint8 `json:"offsize"`
+}
+
+// ArchiveVersion returns the archive format version as a comparable integer.
+// Format: (major << 16) | (minor << 8) | rev
+func (m *Metadata) ArchiveVersion() int {
+	return (int(m.VMain) << 16) | (int(m.VMin) << 8) | int(m.VRev)
 }
 
 // ReadInt reads bytes from reader and operates in reverse byte order, returning an int64.
@@ -211,8 +219,28 @@ func NewMetadata(reader io.Reader) (Metadata, error) {
 		return int(value), nil
 	}
 
-	if metadata.Compression, err = readIntField("compression"); err != nil {
-		return metadata, err
+	// Archive format version 1.15+ (PostgreSQL 14+) changed compression from int to string.
+	// Version 1.16+ (PostgreSQL 16+) changed the format again - the compression algorithm
+	// is stored as a single byte indicator.
+	const versionWithCompressionSpec = (1 << 16) | (15 << 8) // 1.15
+	const versionWithNewCompression = (1 << 16) | (16 << 8) // 1.16
+	if metadata.ArchiveVersion() >= versionWithNewCompression {
+		// Format 1.16+: Read single-byte compression algorithm indicator
+		compressionAlgo, readErr := ReadExactInt(r, 1)
+		if readErr != nil {
+			return metadata, readErr
+		}
+		metadata.Compression = int(compressionAlgo)
+	} else if metadata.ArchiveVersion() >= versionWithCompressionSpec {
+		// Format 1.15.x: Compression is a string specification
+		if metadata.CompressionSpec, err = metadata.ReadString(r); err != nil {
+			return metadata, err
+		}
+	} else {
+		// Older formats use an integer for compression level
+		if metadata.Compression, err = readIntField("compression"); err != nil {
+			return metadata, err
+		}
 	}
 	if metadata.TimeSec, err = readIntField("timeSec"); err != nil {
 		return metadata, err
