@@ -2,7 +2,6 @@ package extractor_test
 
 import (
 	"errors"
-	"io"
 	"os"
 	"testing"
 
@@ -52,8 +51,6 @@ func TestCfgValidate(t *testing.T) {
 		},
 	}
 	for _, tC := range testCases {
-		tC := tC
-
 		t.Run(tC.desc, func(t *testing.T) {
 			t.Parallel()
 
@@ -80,7 +77,13 @@ func TestRunFile(t *testing.T) {
 	t.Parallel()
 
 	cfg := extractor.Cfg{FileName: "../testdata/min.dump", Stdin: false}
-	fd, _ := os.Open(cfg.FileName)
+	fd, err := os.Open(cfg.FileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = fd.Close()
+	})
 
 	if _, err := extractor.Run(fd); err != nil {
 		t.Error(err)
@@ -98,7 +101,7 @@ func TestRunFileErr(t *testing.T) {
 		{
 			desc:     "empty file",
 			filename: "../testdata/empty.dump",
-			err:      io.EOF,
+			err:      metadata.ErrNeedMoreData,
 		},
 		{
 			desc:     "invalid dump",
@@ -108,15 +111,19 @@ func TestRunFileErr(t *testing.T) {
 	}
 
 	for _, tC := range testCases {
-		tC := tC
-
 		t.Run(tC.desc, func(t *testing.T) {
 			t.Parallel()
 
 			cfg := extractor.Cfg{FileName: tC.filename, Stdin: false}
-			fd, _ := os.Open(cfg.FileName)
+			fd, err := os.Open(cfg.FileName)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				_ = fd.Close()
+			})
 
-			_, err := extractor.Run(fd)
+			_, err = extractor.Run(fd)
 			if !errors.Is(err, tC.err) {
 				t.Errorf("expected=%v, got=%v", tC.err, err)
 			}
