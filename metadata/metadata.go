@@ -6,10 +6,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 )
 
 var ErrNotADump = errors.New("magic bytes not detected, not a dump?")
+var ErrNeedMoreData = errors.New("need more data to parse metadata")
+var ErrInvalidIntSize = errors.New("invalid int size")
+var ErrInvalidOffSize = errors.New("invalid offset size")
+var ErrInvalidReadSize = errors.New("invalid read size")
+var ErrIntOverflow = errors.New("integer overflow")
+var ErrStringTooLarge = errors.New("string length too large")
+
+const maxStringLen = 1 << 20
+
+var (
+	maxInt = int(^uint(0) >> 1)
+	minInt = -maxInt - 1
+)
 
 // Metadata represents the metadata about the dump.
 type Metadata struct {
@@ -18,11 +30,11 @@ type Metadata struct {
 	// Format is the format of the dump.
 	Format string `json:"format"`
 	// PGDumpVersion is the version of pg_dump used to create the dump.
-	PGDumpVersion string `json:"pgDumpVersion"`
+	PGDumpVersion *string `json:"pgDumpVersion"`
 	// RemoteVersion is the version of the PostgreSQL cluster dumped.
-	RemoteVersion string `json:"remoteVersion"`
+	RemoteVersion *string `json:"remoteVersion"`
 	// DatabaseName is the name of the database dumped.
-	DatabaseName string `json:"database"`
+	DatabaseName *string `json:"database"`
 	// TimeYear forms the year part of the creation timestamp.
 	TimeYear int `json:"timeYear"`
 	// TimeMonth forms the month part of the creation timestamp.
@@ -53,44 +65,75 @@ type Metadata struct {
 	OffSize uint8 `json:"offsize"`
 }
 
-// ReadInt reads bytes from reader and operates in reverse byte order, returning an int.
-func (m *Metadata) ReadInt(reader io.Reader) int {
-	val := 0
-	byteLength := 8
-	sign := ReadExactInt(reader, 1)
-	buf := make([]byte, m.IntSize)
-
-	if _, err := reader.Read(buf); err != nil {
-		log.Fatalf("err reading int: %v", err)
+// ReadInt reads bytes from reader and operates in reverse byte order, returning an int64.
+func (m *Metadata) ReadInt(reader io.Reader) (int64, error) {
+	if m.IntSize == 0 || m.IntSize > 8 {
+		return 0, fmt.Errorf("%w: intsize=%d", ErrInvalidIntSize, m.IntSize)
 	}
 
+	sign, err := ReadExactInt(reader, 1)
+	if err != nil {
+		return 0, err
+	}
+
+	buf := make([]byte, int(m.IntSize))
+	if _, err := io.ReadFull(reader, buf); err != nil {
+		return 0, mapReadErr(err)
+	}
+
+	var val uint64
 	for len(buf) > 0 {
 		v := buf[len(buf)-1]
 		buf = buf[:len(buf)-1]
-		val = (val << byteLength) + int(v)
+		val = (val << 8) + uint64(v)
 	}
 
 	if sign > 0 {
-		val = -val
+		if val > uint64(maxInt)+1 {
+			return 0, fmt.Errorf("%w: %d", ErrIntOverflow, val)
+		}
+		return -int64(val), nil
 	}
 
-	return val
+	if val > uint64(maxInt) {
+		return 0, fmt.Errorf("%w: %d", ErrIntOverflow, val)
+	}
+
+	return int64(val), nil
 }
 
-// ReadString reads bytes from the reader, returning a string.
-func (m *Metadata) ReadString(reader io.Reader) string {
-	val := ""
-
-	if length := m.ReadInt(reader); length > 0 {
-		buf := make([]byte, length)
-		if _, err := reader.Read(buf); err != nil {
-			log.Fatalf("err reading string: %v", err)
-		}
-
-		val = string(buf)
+// ReadString reads bytes from the reader, returning a string pointer.
+// A negative length is treated as NULL and returns a nil pointer.
+func (m *Metadata) ReadString(reader io.Reader) (*string, error) {
+	length, err := m.ReadInt(reader)
+	if err != nil {
+		return nil, err
 	}
 
-	return val
+	if length < 0 {
+		return nil, nil
+	}
+
+	if length == 0 {
+		empty := ""
+		return &empty, nil
+	}
+
+	if length > int64(maxStringLen) {
+		return nil, fmt.Errorf("%w: %d", ErrStringTooLarge, length)
+	}
+
+	if length > int64(maxInt) {
+		return nil, fmt.Errorf("%w: %d", ErrIntOverflow, length)
+	}
+
+	buf := make([]byte, int(length))
+	if _, err := io.ReadFull(reader, buf); err != nil {
+		return nil, mapReadErr(err)
+	}
+
+	val := string(buf)
+	return &val, nil
 }
 
 // ToJSON returns a JSON representation of the metadata.
@@ -123,29 +166,91 @@ func NewMetadata(reader io.Reader) (Metadata, error) {
 	metadata.Magic = magicString
 
 	if metadata.Magic != "PGDMP" {
-		err := fmt.Errorf("%w, expected=PGDMP, got=%s not a dump?", ErrNotADump, metadata.Magic)
+		return metadata, fmt.Errorf("%w, expected=PGDMP, got=%s not a dump?", ErrNotADump, metadata.Magic)
+	}
 
+	if metadata.VMain, err = ReadExactInt(r, 1); err != nil {
+		return metadata, err
+	}
+	if metadata.VMin, err = ReadExactInt(r, 1); err != nil {
+		return metadata, err
+	}
+	if metadata.VRev, err = ReadExactInt(r, 1); err != nil {
+		return metadata, err
+	}
+	if metadata.IntSize, err = ReadExactInt(r, 1); err != nil {
+		return metadata, err
+	}
+	if metadata.IntSize == 0 || metadata.IntSize > 8 {
+		return metadata, fmt.Errorf("%w: intsize=%d", ErrInvalidIntSize, metadata.IntSize)
+	}
+	if metadata.OffSize, err = ReadExactInt(r, 1); err != nil {
+		return metadata, err
+	}
+	if metadata.OffSize == 0 || metadata.OffSize > 8 {
+		return metadata, fmt.Errorf("%w: offsize=%d", ErrInvalidOffSize, metadata.OffSize)
+	}
+
+	formatIdx, err := ReadExactInt(r, 1)
+	if err != nil {
+		return metadata, err
+	}
+	if int(formatIdx) >= len(formats) {
+		return metadata, fmt.Errorf("invalid format index: %d", formatIdx)
+	}
+	metadata.Format = formats[formatIdx]
+
+	readIntField := func(name string) (int, error) {
+		value, readErr := metadata.ReadInt(r)
+		if readErr != nil {
+			return 0, readErr
+		}
+		if value > int64(maxInt) || value < int64(minInt) {
+			return 0, fmt.Errorf("%w: %s=%d", ErrIntOverflow, name, value)
+		}
+		return int(value), nil
+	}
+
+	if metadata.Compression, err = readIntField("compression"); err != nil {
+		return metadata, err
+	}
+	if metadata.TimeSec, err = readIntField("timeSec"); err != nil {
+		return metadata, err
+	}
+	if metadata.TimeMin, err = readIntField("timeMin"); err != nil {
+		return metadata, err
+	}
+	if metadata.TimeHour, err = readIntField("timeHour"); err != nil {
+		return metadata, err
+	}
+	if metadata.TimeDay, err = readIntField("timeDay"); err != nil {
+		return metadata, err
+	}
+	if metadata.TimeMonth, err = readIntField("timeMonth"); err != nil {
 		return metadata, err
 	}
 
-	metadata.VMain = ReadExactInt(r, 1)
-	metadata.VMin = ReadExactInt(r, 1)
-	metadata.VRev = ReadExactInt(r, 1)
-	metadata.IntSize = ReadExactInt(r, 1)
-	metadata.OffSize = ReadExactInt(r, 1)
-	metadata.Format = formats[ReadExactInt(r, 1)]
-	metadata.Compression = metadata.ReadInt(r)
-	metadata.TimeSec = metadata.ReadInt(r)
-	metadata.TimeMin = metadata.ReadInt(r)
-	metadata.TimeHour = metadata.ReadInt(r)
-	metadata.TimeDay = metadata.ReadInt(r)
-	metadata.TimeMonth = metadata.ReadInt(r)
-	metadata.TimeYear = yearStart + metadata.ReadInt(r)
-	metadata.TimeIsDST = metadata.ReadInt(r)
-	metadata.DatabaseName = metadata.ReadString(r)
-	metadata.RemoteVersion = metadata.ReadString(r)
-	metadata.PGDumpVersion = metadata.ReadString(r)
-	metadata.TOCCount = metadata.ReadInt(r)
+	yearOffset, err := readIntField("timeYearOffset")
+	if err != nil {
+		return metadata, err
+	}
+	metadata.TimeYear = yearStart + yearOffset
+
+	if metadata.TimeIsDST, err = readIntField("timeIsDst"); err != nil {
+		return metadata, err
+	}
+	if metadata.DatabaseName, err = metadata.ReadString(r); err != nil {
+		return metadata, err
+	}
+	if metadata.RemoteVersion, err = metadata.ReadString(r); err != nil {
+		return metadata, err
+	}
+	if metadata.PGDumpVersion, err = metadata.ReadString(r); err != nil {
+		return metadata, err
+	}
+	if metadata.TOCCount, err = readIntField("toccount"); err != nil {
+		return metadata, err
+	}
 
 	return metadata, nil
 }
@@ -154,22 +259,34 @@ func NewMetadata(reader io.Reader) (Metadata, error) {
 func ReadExactString(reader io.Reader, numBytes int) (string, error) {
 	buf := make([]byte, numBytes)
 
-	n, err := reader.Read(buf)
+	n, err := io.ReadFull(reader, buf)
 	if err != nil {
-		return "", fmt.Errorf("err reading exact string: %w", err)
+		return "", mapReadErr(err)
 	}
 
 	return string(buf[0:n]), nil
 }
 
 // ReadExactInt reads an int from the reader, numBytes from current position.
-func ReadExactInt(reader io.Reader, numBytes int) uint8 {
-	buf := make([]byte, numBytes)
-
-	n, err := reader.Read(buf)
-	if err != nil {
-		log.Fatalf("err reading exact int: %v", err)
+func ReadExactInt(reader io.Reader, numBytes int) (uint8, error) {
+	if numBytes != 1 {
+		return 0, fmt.Errorf("%w: numBytes=%d", ErrInvalidReadSize, numBytes)
 	}
 
-	return buf[0:n][0]
+	buf := make([]byte, numBytes)
+
+	n, err := io.ReadFull(reader, buf)
+	if err != nil {
+		return 0, mapReadErr(err)
+	}
+
+	return buf[0:n][0], nil
+}
+
+func mapReadErr(err error) error {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return ErrNeedMoreData
+	}
+
+	return err
 }

@@ -3,13 +3,46 @@ package metadata_test
 import (
 	"bytes"
 	"errors"
-	"io"
 	"os"
 	"reflect"
 	"testing"
 
 	"github.com/mble/pgdump-metadata-extractor/metadata"
 )
+
+func strPtr(s string) *string {
+	return &s
+}
+
+func encodeSigned(sign byte, val uint64, intSize int) []byte {
+	out := make([]byte, 1+intSize)
+	out[0] = sign
+	for i := 0; i < intSize; i++ {
+		out[1+i] = byte(val & 0xff)
+		val >>= 8
+	}
+	return out
+}
+
+func encodeInt(val int64, intSize int) []byte {
+	sign := byte(0)
+	if val < 0 {
+		sign = 1
+		val = -val
+	}
+
+	return encodeSigned(sign, uint64(val), intSize)
+}
+
+func encodeString(val *string, intSize int) []byte {
+	if val == nil {
+		return encodeInt(-1, intSize)
+	}
+
+	b := []byte(*val)
+	out := append(encodeInt(int64(len(b)), intSize), b...)
+	return out
+}
 
 func TestReadExactString(t *testing.T) {
 	t.Parallel()
@@ -27,15 +60,86 @@ func TestReadExactString(t *testing.T) {
 	}
 }
 
+func TestReadExactStringNeedMoreData(t *testing.T) {
+	t.Parallel()
+
+	exp := []byte{0x43, 0x41, 0x46}
+	r := bytes.NewReader(exp)
+
+	_, err := metadata.ReadExactString(r, 5)
+	if !errors.Is(err, metadata.ErrNeedMoreData) {
+		t.Errorf("expected=%v, got=%v", metadata.ErrNeedMoreData, err)
+	}
+}
+
+func TestReadExactIntInvalidNumBytes(t *testing.T) {
+	t.Parallel()
+
+	r := bytes.NewReader([]byte{0x01})
+	_, err := metadata.ReadExactInt(r, 2)
+	if !errors.Is(err, metadata.ErrInvalidReadSize) {
+		t.Errorf("expected=%v, got=%v", metadata.ErrInvalidReadSize, err)
+	}
+}
+
 func TestReadExactInt(t *testing.T) {
 	t.Parallel()
 
 	exp := []byte{0x01, 0x02, 0x03}
 	r := bytes.NewReader(exp)
-	res := metadata.ReadExactInt(r, 1)
+	res, err := metadata.ReadExactInt(r, 1)
+	if err != nil {
+		t.Error(err)
+	}
 
 	if res != 1 {
 		t.Errorf("expected=%d, got=%d", 1, res)
+	}
+}
+
+func TestReadExactIntNeedMoreData(t *testing.T) {
+	t.Parallel()
+
+	exp := []byte{}
+	r := bytes.NewReader(exp)
+
+	_, err := metadata.ReadExactInt(r, 1)
+	if !errors.Is(err, metadata.ErrNeedMoreData) {
+		t.Errorf("expected=%v, got=%v", metadata.ErrNeedMoreData, err)
+	}
+}
+
+func TestReadStringNull(t *testing.T) {
+	t.Parallel()
+
+	meta := metadata.Metadata{IntSize: 4}
+	r := bytes.NewReader(encodeInt(-1, 4))
+
+	res, err := meta.ReadString(r)
+	if err != nil {
+		t.Error(err)
+	}
+	if res != nil {
+		t.Errorf("expected nil, got=%q", *res)
+	}
+}
+
+func TestReadStringEmpty(t *testing.T) {
+	t.Parallel()
+
+	meta := metadata.Metadata{IntSize: 4}
+	r := bytes.NewReader(encodeInt(0, 4))
+
+	res, err := meta.ReadString(r)
+	if err != nil {
+		t.Error(err)
+	}
+	if res == nil || *res != "" {
+		if res == nil {
+			t.Errorf("expected empty string pointer, got nil")
+		} else {
+			t.Errorf("expected empty string, got=%q", *res)
+		}
 	}
 }
 
@@ -58,9 +162,9 @@ func TestNewMetadata(t *testing.T) {
 		TimeMonth:     6,
 		TimeYear:      2021,
 		TimeIsDST:     1,
-		DatabaseName:  "empty_db",
-		RemoteVersion: "10.11",
-		PGDumpVersion: "10.11",
+		DatabaseName:  strPtr("empty_db"),
+		RemoteVersion: strPtr("10.11"),
+		PGDumpVersion: strPtr("10.11"),
 		TOCCount:      15,
 	}
 
@@ -77,6 +181,144 @@ func TestNewMetadata(t *testing.T) {
 
 	if !reflect.DeepEqual(exp, meta) {
 		t.Errorf("expected=%+v, got=%+v", exp, meta)
+	}
+}
+
+func TestNewMetadataIntSize8(t *testing.T) {
+	t.Parallel()
+
+	intSize := 8
+	db := "empty_db"
+	remote := "10.11"
+	pgDump := "10.11"
+
+	var buf bytes.Buffer
+	buf.WriteString("PGDMP")
+	buf.WriteByte(1)             // vmain
+	buf.WriteByte(13)            // vmin
+	buf.WriteByte(0)             // vrev
+	buf.WriteByte(byte(intSize)) // int size
+	buf.WriteByte(8)             // off size
+	buf.WriteByte(1)             // format CUSTOM
+	buf.Write(encodeInt(-1, intSize))
+	buf.Write(encodeInt(33, intSize))
+	buf.Write(encodeInt(53, intSize))
+	buf.Write(encodeInt(18, intSize))
+	buf.Write(encodeInt(3, intSize))
+	buf.Write(encodeInt(6, intSize))
+	buf.Write(encodeInt(2021-1900, intSize))
+	buf.Write(encodeInt(1, intSize))
+	buf.Write(encodeString(&db, intSize))
+	buf.Write(encodeString(&remote, intSize))
+	buf.Write(encodeString(&pgDump, intSize))
+	buf.Write(encodeInt(15, intSize))
+
+	meta, err := metadata.NewMetadata(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Error(err)
+	}
+
+	exp := metadata.Metadata{
+		Magic:         "PGDMP",
+		VMain:         1,
+		VMin:          13,
+		VRev:          0,
+		IntSize:       uint8(intSize),
+		OffSize:       8,
+		Format:        "CUSTOM",
+		Compression:   -1,
+		TimeSec:       33,
+		TimeMin:       53,
+		TimeHour:      18,
+		TimeDay:       3,
+		TimeMonth:     6,
+		TimeYear:      2021,
+		TimeIsDST:     1,
+		DatabaseName:  strPtr("empty_db"),
+		RemoteVersion: strPtr("10.11"),
+		PGDumpVersion: strPtr("10.11"),
+		TOCCount:      15,
+	}
+
+	if !reflect.DeepEqual(exp, meta) {
+		t.Errorf("expected=%+v, got=%+v", exp, meta)
+	}
+}
+
+func TestNewMetadataInvalidIntSize(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	buf.WriteString("PGDMP")
+	buf.WriteByte(1)  // vmain
+	buf.WriteByte(13) // vmin
+	buf.WriteByte(0)  // vrev
+	buf.WriteByte(0)  // invalid int size
+
+	_, err := metadata.NewMetadata(bytes.NewReader(buf.Bytes()))
+	if !errors.Is(err, metadata.ErrInvalidIntSize) {
+		t.Errorf("expected=%v, got=%v", metadata.ErrInvalidIntSize, err)
+	}
+}
+
+func TestNewMetadataInvalidOffSize(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	buf.WriteString("PGDMP")
+	buf.WriteByte(1)  // vmain
+	buf.WriteByte(13) // vmin
+	buf.WriteByte(0)  // vrev
+	buf.WriteByte(4)  // int size
+	buf.WriteByte(0)  // invalid off size
+
+	_, err := metadata.NewMetadata(bytes.NewReader(buf.Bytes()))
+	if !errors.Is(err, metadata.ErrInvalidOffSize) {
+		t.Errorf("expected=%v, got=%v", metadata.ErrInvalidOffSize, err)
+	}
+}
+
+func TestNewMetadataIntOverflowPositive(t *testing.T) {
+	t.Parallel()
+
+	maxInt := int(^uint(0) >> 1)
+	overflow := uint64(maxInt) + 1
+
+	var buf bytes.Buffer
+	buf.WriteString("PGDMP")
+	buf.WriteByte(1)  // vmain
+	buf.WriteByte(13) // vmin
+	buf.WriteByte(0)  // vrev
+	buf.WriteByte(8)  // int size
+	buf.WriteByte(8)  // off size
+	buf.WriteByte(1)  // format CUSTOM
+	buf.Write(encodeSigned(0, overflow, 8))
+
+	_, err := metadata.NewMetadata(bytes.NewReader(buf.Bytes()))
+	if !errors.Is(err, metadata.ErrIntOverflow) {
+		t.Errorf("expected=%v, got=%v", metadata.ErrIntOverflow, err)
+	}
+}
+
+func TestNewMetadataIntOverflowNegative(t *testing.T) {
+	t.Parallel()
+
+	maxInt := int(^uint(0) >> 1)
+	overflow := uint64(maxInt) + 2
+
+	var buf bytes.Buffer
+	buf.WriteString("PGDMP")
+	buf.WriteByte(1)  // vmain
+	buf.WriteByte(13) // vmin
+	buf.WriteByte(0)  // vrev
+	buf.WriteByte(8)  // int size
+	buf.WriteByte(8)  // off size
+	buf.WriteByte(1)  // format CUSTOM
+	buf.Write(encodeSigned(1, overflow, 8))
+
+	_, err := metadata.NewMetadata(bytes.NewReader(buf.Bytes()))
+	if !errors.Is(err, metadata.ErrIntOverflow) {
+		t.Errorf("expected=%v, got=%v", metadata.ErrIntOverflow, err)
 	}
 }
 
@@ -107,8 +349,8 @@ func TestNewMetadataReadErr(t *testing.T) {
 
 	_, err = metadata.NewMetadata(file)
 
-	if !errors.Is(err, io.EOF) {
-		t.Errorf("expeceted=%v, got=%v", err, io.EOF)
+	if !errors.Is(err, metadata.ErrNeedMoreData) {
+		t.Errorf("expected=%v, got=%v", metadata.ErrNeedMoreData, err)
 	}
 }
 
@@ -131,9 +373,9 @@ func TestToJSON(t *testing.T) {
 		TimeMonth:     6,
 		TimeYear:      2021,
 		TimeIsDST:     1,
-		DatabaseName:  "empty_db",
-		RemoteVersion: "10.11",
-		PGDumpVersion: "10.11",
+		DatabaseName:  strPtr("empty_db"),
+		RemoteVersion: strPtr("10.11"),
+		PGDumpVersion: strPtr("10.11"),
 		TOCCount:      15,
 	}
 
