@@ -41,8 +41,6 @@ func Run(fd io.Reader) ([]byte, error) {
 
 	json, err := data.ToJSON()
 	if err != nil {
-		err = fmt.Errorf("%w", err)
-
 		return nil, err
 	}
 

@@ -27,7 +27,9 @@ func run(cfg extractor.Cfg) error {
 	}
 
 	defer func() {
-		fd.Close()
+		if fd != nil && fd != os.Stdin {
+			_ = fd.Close()
+		}
 	}()
 
 	json, err := extractor.Run(fd)
@@ -35,7 +37,7 @@ func run(cfg extractor.Cfg) error {
 		return err
 	}
 
-	fmt.Printf("%s", json)
+	fmt.Printf("%s\n", json)
 
 	return nil
 }
