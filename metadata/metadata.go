@@ -23,6 +23,9 @@ var (
 	minInt = -maxInt - 1
 )
 
+// formats maps format index to format name for pg_dump archives.
+var formats = [...]string{"UNKNOWN", "CUSTOM", "FILE", "TAR", "NULL", "DIRECTORY"}
+
 // Metadata represents the metadata about the dump.
 type Metadata struct {
 	// Magic is the magic byte string.
@@ -90,10 +93,8 @@ func (m *Metadata) ReadInt(reader io.Reader) (int64, error) {
 	}
 
 	var val uint64
-	for len(buf) > 0 {
-		v := buf[len(buf)-1]
-		buf = buf[:len(buf)-1]
-		val = (val << 8) + uint64(v)
+	for i := int(m.IntSize) - 1; i >= 0; i-- {
+		val = (val << 8) + uint64(buf[i])
 	}
 
 	if sign > 0 {
@@ -159,8 +160,7 @@ func (m *Metadata) ToJSON() ([]byte, error) {
 // NewMetadata reads from reader, parsing out the pg_dump archive header format
 // into a Metadata struct.
 func NewMetadata(reader io.Reader) (Metadata, error) {
-	formats := []string{"UNKNOWN", "CUSTOM", "FILE", "TAR", "NULL", "DIRECTORY"}
-	yearStart := 1900
+	const yearStart = 1900
 	metadata := Metadata{}
 
 	r := bufio.NewReader(reader)
@@ -301,14 +301,22 @@ func ReadExactInt(reader io.Reader, numBytes int) (uint8, error) {
 		return 0, fmt.Errorf("%w: numBytes=%d", ErrInvalidReadSize, numBytes)
 	}
 
-	buf := make([]byte, numBytes)
+	// Fast path: use ReadByte if available (e.g., bufio.Reader)
+	if br, ok := reader.(io.ByteReader); ok {
+		b, err := br.ReadByte()
+		if err != nil {
+			return 0, mapReadErr(err)
+		}
+		return b, nil
+	}
 
-	n, err := io.ReadFull(reader, buf)
-	if err != nil {
+	// Fallback for readers without ReadByte
+	var buf [1]byte
+	if _, err := io.ReadFull(reader, buf[:]); err != nil {
 		return 0, mapReadErr(err)
 	}
 
-	return buf[0:n][0], nil
+	return buf[0], nil
 }
 
 func mapReadErr(err error) error {
