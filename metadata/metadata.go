@@ -157,10 +157,40 @@ func (m *Metadata) ToJSON() ([]byte, error) {
 	return out, nil
 }
 
+// readTimeFields reads all timestamp-related fields from the archive header.
+func readTimeFields(m *Metadata, readInt func(string) (int, error)) error {
+	const yearStart = 1900
+	var err error
+
+	if m.TimeSec, err = readInt("timeSec"); err != nil {
+		return err
+	}
+	if m.TimeMin, err = readInt("timeMin"); err != nil {
+		return err
+	}
+	if m.TimeHour, err = readInt("timeHour"); err != nil {
+		return err
+	}
+	if m.TimeDay, err = readInt("timeDay"); err != nil {
+		return err
+	}
+	if m.TimeMonth, err = readInt("timeMonth"); err != nil {
+		return err
+	}
+	yearOffset, err := readInt("timeYearOffset")
+	if err != nil {
+		return err
+	}
+	m.TimeYear = yearStart + yearOffset
+	if m.TimeIsDST, err = readInt("timeIsDst"); err != nil {
+		return err
+	}
+	return nil
+}
+
 // NewMetadata reads from reader, parsing out the pg_dump archive header format
 // into a Metadata struct.
 func NewMetadata(reader io.Reader) (Metadata, error) {
-	const yearStart = 1900
 	metadata := Metadata{}
 
 	r := bufio.NewReader(reader)
@@ -223,48 +253,28 @@ func NewMetadata(reader io.Reader) (Metadata, error) {
 	// Version 1.16+ (PostgreSQL 16+) changed the format again - the compression algorithm
 	// is stored as a single byte indicator.
 	const versionWithCompressionSpec = (1 << 16) | (15 << 8) // 1.15
-	const versionWithNewCompression = (1 << 16) | (16 << 8) // 1.16
-	if metadata.ArchiveVersion() >= versionWithNewCompression {
+	const versionWithNewCompression = (1 << 16) | (16 << 8)  // 1.16
+	archiveVersion := metadata.ArchiveVersion()
+	switch {
+	case archiveVersion >= versionWithNewCompression:
 		// Format 1.16+: Read single-byte compression algorithm indicator
 		compressionAlgo, readErr := ReadExactInt(r, 1)
 		if readErr != nil {
 			return metadata, readErr
 		}
 		metadata.Compression = int(compressionAlgo)
-	} else if metadata.ArchiveVersion() >= versionWithCompressionSpec {
+	case archiveVersion >= versionWithCompressionSpec:
 		// Format 1.15.x: Compression is a string specification
 		if metadata.CompressionSpec, err = metadata.ReadString(r); err != nil {
 			return metadata, err
 		}
-	} else {
+	default:
 		// Older formats use an integer for compression level
 		if metadata.Compression, err = readIntField("compression"); err != nil {
 			return metadata, err
 		}
 	}
-	if metadata.TimeSec, err = readIntField("timeSec"); err != nil {
-		return metadata, err
-	}
-	if metadata.TimeMin, err = readIntField("timeMin"); err != nil {
-		return metadata, err
-	}
-	if metadata.TimeHour, err = readIntField("timeHour"); err != nil {
-		return metadata, err
-	}
-	if metadata.TimeDay, err = readIntField("timeDay"); err != nil {
-		return metadata, err
-	}
-	if metadata.TimeMonth, err = readIntField("timeMonth"); err != nil {
-		return metadata, err
-	}
-
-	yearOffset, err := readIntField("timeYearOffset")
-	if err != nil {
-		return metadata, err
-	}
-	metadata.TimeYear = yearStart + yearOffset
-
-	if metadata.TimeIsDST, err = readIntField("timeIsDst"); err != nil {
+	if err = readTimeFields(&metadata, readIntField); err != nil { //nolint:gocritic // reusing err is clearer here
 		return metadata, err
 	}
 	if metadata.DatabaseName, err = metadata.ReadString(r); err != nil {

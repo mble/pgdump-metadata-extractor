@@ -10,6 +10,14 @@ import (
 	"github.com/mble/pgdump-metadata-extractor/metadata"
 )
 
+const (
+	testDBName     = "test_db"
+	testVersion    = "10.11"
+	testVersionPG  = "14.0"
+	testVersionPG2 = "16.0"
+	testVersionPG3 = "17.0"
+)
+
 func strPtr(s string) *string {
 	return &s
 }
@@ -163,8 +171,8 @@ func TestNewMetadata(t *testing.T) {
 		TimeYear:      2021,
 		TimeIsDST:     1,
 		DatabaseName:  strPtr("empty_db"),
-		RemoteVersion: strPtr("10.11"),
-		PGDumpVersion: strPtr("10.11"),
+		RemoteVersion: strPtr(testVersion),
+		PGDumpVersion: strPtr(testVersion),
 		TOCCount:      15,
 	}
 
@@ -189,8 +197,8 @@ func TestNewMetadataIntSize8(t *testing.T) {
 
 	intSize := 8
 	db := "empty_db"
-	remote := "10.11"
-	pgDump := "10.11"
+	remote := testVersion
+	pgDump := testVersion
 
 	var buf bytes.Buffer
 	buf.WriteString("PGDMP")
@@ -235,8 +243,8 @@ func TestNewMetadataIntSize8(t *testing.T) {
 		TimeYear:      2021,
 		TimeIsDST:     1,
 		DatabaseName:  strPtr("empty_db"),
-		RemoteVersion: strPtr("10.11"),
-		PGDumpVersion: strPtr("10.11"),
+		RemoteVersion: strPtr(testVersion),
+		PGDumpVersion: strPtr(testVersion),
 		TOCCount:      15,
 	}
 
@@ -359,7 +367,7 @@ func TestNewMetadataFormat115(t *testing.T) {
 
 	// Format 1.15 uses compression as a string
 	intSize := 4
-	db := "test_db"
+	db := testDBName
 	remote := "14.0"
 	pgDump := "14.0"
 	compressionSpec := "none"
@@ -406,7 +414,7 @@ func TestNewMetadataFormat115(t *testing.T) {
 		TimeMonth:       6,
 		TimeYear:        2021,
 		TimeIsDST:       1,
-		DatabaseName:    strPtr("test_db"),
+		DatabaseName:    strPtr(testDBName),
 		RemoteVersion:   strPtr("14.0"),
 		PGDumpVersion:   strPtr("14.0"),
 		TOCCount:        15,
@@ -422,7 +430,7 @@ func TestNewMetadataFormat116(t *testing.T) {
 
 	// Format 1.16 uses compression as a single byte
 	intSize := 4
-	db := "test_db"
+	db := testDBName
 	remote := "16.0"
 	pgDump := "17.0"
 
@@ -468,7 +476,7 @@ func TestNewMetadataFormat116(t *testing.T) {
 		TimeMonth:     8,
 		TimeYear:      2025,
 		TimeIsDST:     1,
-		DatabaseName:  strPtr("test_db"),
+		DatabaseName:  strPtr(testDBName),
 		RemoteVersion: strPtr("16.0"),
 		PGDumpVersion: strPtr("17.0"),
 		TOCCount:      10,
@@ -499,8 +507,8 @@ func TestToJSON(t *testing.T) {
 		TimeYear:      2021,
 		TimeIsDST:     1,
 		DatabaseName:  strPtr("empty_db"),
-		RemoteVersion: strPtr("10.11"),
-		PGDumpVersion: strPtr("10.11"),
+		RemoteVersion: strPtr(testVersion),
+		PGDumpVersion: strPtr(testVersion),
 		TOCCount:      15,
 	}
 
